@@ -1,0 +1,8 @@
+{
+  "buildCommand": "cd sslgvoting && npm run build",
+  "outputDirectory": "sslgvoting/.next",
+  "devCommand": "cd sslgvoting && npm run dev",
+  "installCommand": "cd sslgvoting && npm install",
+  "framework": "nextjs",
+  "regions": ["iad1"]
+}
