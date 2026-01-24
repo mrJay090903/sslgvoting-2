@@ -609,8 +609,8 @@ export default function Home() {
                     </svg>
                   </div>
                   <div>
-                    <p className="text-slate-400 text-sm">Student Center Building</p>
-                    <p className="text-slate-400 text-sm">Campus Main Road</p>
+                    <p className="text-slate-400 text-sm">Itaran National High School</p>
+                    <p className="text-slate-400 text-sm">Itaran Polangui Albay</p>
                   </div>
                 </li>
                 <li className="flex items-center gap-3">
@@ -630,7 +630,7 @@ export default function Home() {
                     </svg>
                   </div>
                   <a href="tel:+1234567890" className="text-slate-400 hover:text-sky-400 transition-colors text-sm">
-                    (123) 456-7890
+                    (975) 920-9976
                   </a>
                 </li>
               </ul>
