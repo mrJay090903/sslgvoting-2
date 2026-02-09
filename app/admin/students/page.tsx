@@ -306,30 +306,21 @@ export default function StudentsPage() {
     }
 
     try {
-      const gradeStudents = students.filter(s => s.Grade === updateFromGrade);
-      
-      if (gradeStudents.length === 0) {
-        toast.error(`No Grade ${updateFromGrade} students found`);
+      // Use bulk update API to avoid rate limits and speed up
+      const response = await fetch('/api/students/bulk-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromGrade: updateFromGrade, toGrade: updateToGrade }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        console.error('Bulk update error:', result?.error);
+        toast.error(result?.error || 'Failed to update students');
         return;
       }
 
-      const updatePromises = gradeStudents.map(student =>
-        fetch('/api/students', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: student.id,
-            "Student ID": student["Student ID"],
-            "Full Name": student["Full Name"],
-            Grade: updateToGrade,
-            Email: student.Email,
-            "Contact Number": student["Contact Number"],
-          }),
-        })
-      );
-
-      await Promise.all(updatePromises);
-      toast.success(`Successfully updated ${gradeStudents.length} students from Grade ${updateFromGrade} to Grade ${updateToGrade}`);
+      toast.success(`Successfully updated ${result.updated} students from Grade ${updateFromGrade} to Grade ${updateToGrade}`);
       setUpdateGradeDialogOpen(false);
       await fetchStudents();
     } catch (err) {
