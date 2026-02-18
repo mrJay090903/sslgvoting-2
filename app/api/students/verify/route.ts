@@ -34,15 +34,20 @@ export async function POST(request: Request) {
 
     const { studentId } = validation.data;
 
-    // Verify student exists - using "Student ID" column
-    const { data: student, error: studentError } = await supabaseAdmin
+    // Use limit(1) so duplicate Student IDs don't cause a "multiple rows" error
+    const { data: rows, error: lookupError } = await supabaseAdmin
       .from('students')
       .select('*')
       .eq('Student ID', studentId)
-      .single();
+      .limit(1);
 
-    if (studentError || !student) {
-      // Use generic error message to prevent enumeration
+    if (lookupError) {
+      console.error('Student lookup error:', lookupError.message, '| studentId:', studentId);
+    }
+
+    const student = rows?.[0] ?? null;
+
+    if (!student) {
       return NextResponse.json(
         { error: 'Invalid credentials' }, 
         { status: 401, headers: { 'X-RateLimit-Remaining': remaining.toString() } }

@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { createClient } from "@/lib/supabase/client";
 import { Users, ArrowLeft } from "lucide-react";
 
 export default function StudentLoginPage() {
@@ -24,88 +23,29 @@ export default function StudentLoginPage() {
     setError("");
 
     try {
-      const supabase = createClient();
-
-      // Verify student exists and is active
-      const { data: student, error: studentError } = await supabase
-        .from("students")
-        .select("*")
-        .eq("student_id", studentId)
-        .eq("is_active", true)
-        .single();
-
-      if (studentError || !student) {
-        setError("Invalid Student ID or account is not active");
-        setLoading(false);
-        return;
-      }
-
-      // Check if there's an open election
-      const { data: elections, error: electionError } = await supabase
-        .from("elections")
-        .select("*")
-        .eq("status", "open")
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (electionError || !elections || elections.length === 0) {
-        setError("No active election at the moment");
-        setLoading(false);
-        return;
-      }
-
-      const activeElection = elections[0];
-
-      // Check if student has already voted
-      const { data: votingSession } = await supabase
-        .from("voting_sessions")
-        .select("*")
-        .eq("election_id", activeElection.id)
-        .eq("student_id", student.id)
-        .eq("has_voted", true)
-        .single();
-
-      if (votingSession) {
-        setError("You have already voted in this election");
-        setLoading(false);
-        return;
-      }
-
-      // Create voting session via API (uses service role)
-      const sessionResponse = await fetch('/api/auth/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: student.id,
-          electionId: activeElection.id,
-        }),
+      // Use the verify API — it handles student lookup + session creation in one call
+      const response = await fetch("/api/students/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId }),
       });
 
-      const sessionResult = await sessionResponse.json();
+      const result = await response.json();
 
-      console.log('Session creation response:', { 
-        status: sessionResponse.ok, 
-        hasToken: !!sessionResult.sessionToken 
-      });
-
-      if (!sessionResponse.ok || !sessionResult.success || !sessionResult.sessionToken) {
-        console.error('Session creation failed:', sessionResult);
-        setError(sessionResult.error || 'Failed to create voting session. Please try again.');
+      if (!response.ok) {
+        setError(result.error || "Invalid Student ID. Please try again.");
         setLoading(false);
         return;
       }
 
-      // Store student info in session storage
-      sessionStorage.setItem("student_id", student.id);
-      sessionStorage.setItem("student_name", `${student.first_name} ${student.last_name}`);
-      sessionStorage.setItem("student_grade", student.grade_level.toString());
-      sessionStorage.setItem("election_id", activeElection.id);
-      sessionStorage.setItem("session_token", sessionResult.sessionToken);
-
-      console.log('Login successful, session token stored');
+      // Store verified session data
+      sessionStorage.setItem("student_id", result.student.id);
+      sessionStorage.setItem("student_name", result.student["Full Name"] || "");
+      sessionStorage.setItem("election_id", result.election.id);
+      sessionStorage.setItem("session_token", result.sessionToken);
 
       // Redirect to voting page
-      router.push(`/vote/${activeElection.id}`);
+      router.push(`/vote/${result.election.id}`);
     } catch (err) {
       setError("An error occurred. Please try again.");
       setLoading(false);

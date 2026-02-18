@@ -5,7 +5,7 @@ export const studentIdSchema = z.object({
   studentId: z.string()
     .min(1, 'Student ID is required')
     .max(50, 'Student ID is too long')
-    .regex(/^[A-Za-z0-9-]+$/, 'Student ID contains invalid characters'),
+    .regex(/^[A-Za-z0-9\-_ .]+$/, 'Student ID contains invalid characters'),
 });
 
 export const studentSchema = z.object({
