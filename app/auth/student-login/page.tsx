@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -16,6 +16,7 @@ export default function StudentLoginPage() {
   const [studentId, setStudentId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isPending, startTransition] = useTransition();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,8 +45,10 @@ export default function StudentLoginPage() {
       sessionStorage.setItem("election_id", result.election.id);
       sessionStorage.setItem("session_token", result.sessionToken);
 
-      // Redirect to voting page
-      router.push(`/vote/${result.election.id}`);
+      // Use replace for faster navigation (no back button push)
+      startTransition(() => {
+        router.replace(`/vote/${result.election.id}`);
+      });
     } catch (err) {
       setError("An error occurred. Please try again.");
       setLoading(false);
@@ -103,9 +106,9 @@ export default function StudentLoginPage() {
               <Button 
                 type="submit" 
                 className="w-full bg-slate-900 hover:bg-slate-800 text-white" 
-                disabled={loading}
+                disabled={loading || isPending}
               >
-                {loading ? "Verifying..." : "Proceed to Vote"}
+                {loading || isPending ? "Verifying..." : "Proceed to Vote"}
               </Button>
             </form>
           </CardContent>

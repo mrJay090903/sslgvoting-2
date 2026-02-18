@@ -211,6 +211,36 @@ export default function StudentsPage() {
     setDialogOpen(false);
   };
 
+  const downloadCSVTemplate = () => {
+    // Create CSV template with headers and sample data
+    const headers = ['Student ID', 'Full Name', 'Grade', 'Email', 'Contact Number'];
+    const sampleData = [
+      ['2024-001', 'John Doe', '10', 'john.doe@example.com', '09123456789'],
+      ['2024-002', 'Jane Smith', '11', 'jane.smith@example.com', '09987654321'],
+      ['2024-003', 'Bob Johnson', '12', 'bob.johnson@example.com', 'N/A']
+    ];
+
+    // Combine headers and sample data
+    const csvContent = [
+      headers.join(','),
+      ...sampleData.map(row => row.join(','))
+    ].join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'student_import_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('Template downloaded successfully!');
+  };
+
   const handleImportCSV = async () => {
     if (!csvFile) return;
 
@@ -236,12 +266,21 @@ export default function StudentsPage() {
 
           // Map CSV data to database columns
           const studentsToImport = results.data.map((row: any) => {
-            // Handle contact number - convert N/A to null
-            let contactNumber = row['Contact Number'] || row['contact number'] || null;
+            // Handle contact number - convert N/A to empty string
+            let contactNumber = row['Contact Number'] || row['contact number'] || '';
             if (contactNumber) {
               const contactValue = contactNumber.trim().toUpperCase();
               if (contactValue === 'N/A' || contactValue === '') {
-                contactNumber = null;
+                contactNumber = '';
+              }
+            }
+
+            // Handle email - convert empty/invalid to empty string
+            let email = row['Email'] || row['email'] || '';
+            if (email) {
+              const emailValue = email.trim().toUpperCase();
+              if (emailValue === 'N/A' || emailValue === '') {
+                email = '';
               }
             }
 
@@ -249,7 +288,7 @@ export default function StudentsPage() {
               "Student ID": row['Student ID'] || row['student id'] || '',
               "Full Name": row['Full Name'] || row['full name'] || '',
               Grade: parseInt(row['Grade'] || row['grade'] || '7'),
-              Email: row['Email'] || row['email'] || null,
+              Email: email,
               "Contact Number": contactNumber,
             };
 
@@ -845,15 +884,29 @@ export default function StudentsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="csv-file">CSV File</Label>
-              <Input
-                id="csv-file"
-                type="file"
-                accept=".csv"
-                onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-                disabled={importing}
-              />
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="csv-file">CSV File</Label>
+                <Input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                  disabled={importing}
+                />
+              </div>
+              <div className="pt-8">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadCSVTemplate}
+                  className="whitespace-nowrap"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Template
+                </Button>
+              </div>
             </div>
             <div className="text-sm text-muted-foreground space-y-1">
               <p><strong>CSV Format Example:</strong></p>
@@ -862,6 +915,7 @@ export default function StudentsPage() {
                 2024-001,John Doe,10,john@example.com,09123456789<br />
                 2024-002,Jane Smith,11,jane@example.com,09987654321
               </code>
+              <p className="text-xs pt-2">💡 Tip: Download the template above to get started with the correct format.</p>
             </div>
           </div>
           <DialogFooter>

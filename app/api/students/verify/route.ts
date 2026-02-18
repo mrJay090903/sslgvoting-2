@@ -34,18 +34,26 @@ export async function POST(request: Request) {
 
     const { studentId } = validation.data;
 
-    // Use limit(1) so duplicate Student IDs don't cause a "multiple rows" error
-    const { data: rows, error: lookupError } = await supabaseAdmin
-      .from('students')
-      .select('*')
-      .eq('Student ID', studentId)
-      .limit(1);
+    // Parallelize student lookup and election fetch for faster response
+    const [studentResult, electionResult] = await Promise.all([
+      supabaseAdmin
+        .from('students')
+        .select('id, "Full Name"')
+        .eq('Student ID', studentId)
+        .limit(1),
+      supabaseAdmin
+        .from('elections')
+        .select('id, title')
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(1)
+    ]);
 
-    if (lookupError) {
-      console.error('Student lookup error:', lookupError.message, '| studentId:', studentId);
+    if (studentResult.error) {
+      console.error('Student lookup error:', studentResult.error.message, '| studentId:', studentId);
     }
 
-    const student = rows?.[0] ?? null;
+    const student = studentResult.data?.[0] ?? null;
 
     if (!student) {
       return NextResponse.json(
@@ -54,31 +62,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if there's an open election
-    const { data: elections, error: electionError } = await supabaseAdmin
-      .from('elections')
-      .select('*')
-      .eq('status', 'open')
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (electionError || !elections || elections.length === 0) {
+    if (electionResult.error || !electionResult.data || electionResult.data.length === 0) {
       return NextResponse.json(
         { error: 'No active election at the moment' }, 
         { status: 404, headers: { 'X-RateLimit-Remaining': remaining.toString() } }
       );
     }
 
-    const activeElection = elections[0];
+    const activeElection = electionResult.data[0];
 
     // Check if student has already voted
     const { data: votingSession } = await supabaseAdmin
       .from('voting_sessions')
-      .select('*')
+      .select('has_voted')
       .eq('election_id', activeElection.id)
       .eq('student_id', student.id)
       .eq('has_voted', true)
-      .single();
+      .maybeSingle();
 
     if (votingSession) {
       return NextResponse.json(
@@ -90,47 +90,25 @@ export async function POST(request: Request) {
     // Generate a secure session token for voting
     const sessionToken = crypto.randomUUID();
     
-    console.log('Creating session for student:', student.id, 'election:', activeElection.id);
-    
-    // First, try to delete any existing unvoted session
-    const { error: deleteError } = await supabaseAdmin
+    // Use upsert to create or replace session in one query (faster than delete+insert)
+    const { error: sessionError } = await supabaseAdmin
       .from('voting_sessions')
-      .delete()
-      .eq('election_id', activeElection.id)
-      .eq('student_id', student.id)
-      .eq('has_voted', false);
-    
-    if (deleteError) {
-      console.warn('Could not delete existing session (might not exist):', deleteError.message);
-    }
-    
-    // Now insert a fresh session
-    const { data: sessionData, error: sessionError } = await supabaseAdmin
-      .from('voting_sessions')
-      .insert({
+      .upsert({
         election_id: activeElection.id,
         student_id: student.id,
         session_token: sessionToken,
         has_voted: false,
-      })
-      .select()
-      .single();
+      }, {
+        onConflict: 'election_id,student_id'
+      });
 
     if (sessionError) {
-      console.error('Session creation error:', {
-        error: sessionError,
-        message: sessionError.message,
-        code: sessionError.code,
-        details: sessionError.details,
-        hint: sessionError.hint
-      });
+      console.error('Session creation error:', sessionError.message);
       return NextResponse.json(
-        { error: 'Failed to create voting session: ' + sessionError.message }, 
+        { error: 'Failed to create voting session' }, 
         { status: 500 }
       );
     }
-
-    console.log('Session created successfully with token:', sessionData);
 
     return NextResponse.json({
       student: {

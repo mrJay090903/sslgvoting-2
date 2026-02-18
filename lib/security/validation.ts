@@ -12,8 +12,8 @@ export const studentSchema = z.object({
   'Student ID': z.string().min(1).max(50),
   'Full Name': z.string().min(1).max(200),
   'Grade': z.union([z.string(), z.number()]).transform(val => String(val)),
-  'Email': z.string().email().optional().or(z.literal('')),
-  'Contact Number': z.string().max(20).optional().or(z.literal('')),
+  'Email': z.string().email().optional().nullable().or(z.literal('')),
+  'Contact Number': z.string().max(20).optional().nullable().or(z.literal('')),
 });
 
 export const studentArraySchema = z.array(studentSchema);
