@@ -105,50 +105,74 @@ export default function VotePage() {
   };
 
   const handleVoteSelect = (positionId: string, candidateId: string, maxVotes: number) => {
+    const currentVotes = selectedVotes[positionId] || [];
+    
+    // Clear abstain if set
     setAbstainedPositions((prev) => {
       const next = new Set(prev);
       next.delete(positionId);
       return next;
     });
-    setSelectedVotes((prev) => {
-      const currentVotes = prev[positionId] || [];
+    
+    // Check if removing vote
+    if (currentVotes.includes(candidateId)) {
+      setSelectedVotes((prev) => ({
+        ...prev,
+        [positionId]: currentVotes.filter((id) => id !== candidateId)
+      }));
+      toast.success("Vote removed");
+      return;
+    }
 
-      if (currentVotes.includes(candidateId)) {
-        toast.success("Vote removed");
-        return { ...prev, [positionId]: currentVotes.filter((id) => id !== candidateId) };
+    // Check if max votes reached
+    if (currentVotes.length >= maxVotes) {
+      if (maxVotes === 1) {
+        // Replace vote for single-selection position
+        setSelectedVotes((prev) => ({
+          ...prev,
+          [positionId]: [candidateId]
+        }));
+        toast.success("Vote changed");
+        return;
       }
+      // Max votes reached
+      toast.error(`You can only select up to ${maxVotes} candidates for this position`);
+      return;
+    }
 
-      if (currentVotes.length >= maxVotes) {
-        if (maxVotes === 1) {
-          toast.success("Vote changed");
-          return { ...prev, [positionId]: [candidateId] };
-        }
-        toast.error(`You can only select up to ${maxVotes} candidates for this position`);
-        return prev;
-      }
-
-      toast.success("Vote recorded");
-      return { ...prev, [positionId]: [...currentVotes, candidateId] };
-    });
+    // Add new vote
+    setSelectedVotes((prev) => ({
+      ...prev,
+      [positionId]: [...currentVotes, candidateId]
+    }));
+    toast.success("Vote recorded");
   };
 
   const handleAbstain = (positionId: string) => {
+    const wasAbstained = abstainedPositions.has(positionId);
+    
     setAbstainedPositions((prev) => {
       const next = new Set(prev);
       if (next.has(positionId)) {
         next.delete(positionId);
-        toast("Abstain removed", { icon: "↩️" });
       } else {
         next.add(positionId);
-        toast("You have chosen to abstain", { icon: "⊘" });
       }
       return next;
     });
+    
     setSelectedVotes((prev) => {
       const next = { ...prev };
       delete next[positionId];
       return next;
     });
+
+    // Show toast
+    if (wasAbstained) {
+      toast("Abstain removed", { icon: "↩️" });
+    } else {
+      toast("You have chosen to abstain", { icon: "⊘" });
+    }
   };
 
   const handleSubmit = async () => {
@@ -340,7 +364,7 @@ export default function VotePage() {
 
       {/* ---- CONTENT ---- */}
       <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        <div className="max-w-400 mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
 
           {/* Title area */}
           <div className="text-center mb-10 sm:mb-14">
@@ -434,12 +458,12 @@ export default function VotePage() {
                       </div>
                     ) : (
                       <div className="p-5 sm:p-7">
-                        <div className={`grid gap-6 ${
+                        <div className={`grid gap-6 lg:gap-8 ${
                           position.candidates.length === 1
-                            ? "grid-cols-1 max-w-lg mx-auto"
+                            ? "grid-cols-1 max-w-2xl mx-auto"
                             : position.candidates.length === 2
-                            ? "grid-cols-1 sm:grid-cols-2 max-w-4xl mx-auto"
-                            : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                            ? "grid-cols-1 sm:grid-cols-2 max-w-5xl mx-auto"
+                            : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                         }`}>
                           {position.candidates.map((candidate) => {
                             const isSelected = (selectedVotes[position.id] || []).includes(candidate.id);
@@ -447,7 +471,7 @@ export default function VotePage() {
                             return (
                               <div
                                 key={candidate.id}
-                                className={`group relative rounded-2xl border-2 p-6 sm:p-8 transition-all duration-500 ${
+                                className={`group relative rounded-2xl border-2 p-6 sm:p-8 lg:p-10 transition-all duration-500 ${
                                   isSelected
                                     ? "border-sky-400 bg-linear-to-b from-sky-50/90 to-blue-50/50 shadow-lg shadow-sky-200/40 ring-1 ring-sky-300/40 scale-[1.01]"
                                     : hasDecided
@@ -468,7 +492,7 @@ export default function VotePage() {
 
                                 {/* Candidate photo + name */}
                                 <div className="flex flex-col items-center text-center">
-                                  <div className={`relative w-40 h-40 sm:w-52 sm:h-52 rounded-2xl overflow-hidden transition-all duration-500 ${
+                                  <div className={`relative w-40 h-40 sm:w-52 sm:h-52 lg:w-64 lg:h-64 rounded-2xl overflow-hidden transition-all duration-500 ${
                                     isSelected
                                       ? "ring-4 ring-sky-300/50 shadow-lg shadow-sky-200/40"
                                       : "ring-2 ring-slate-200/60 group-hover:ring-sky-200"
@@ -481,7 +505,7 @@ export default function VotePage() {
                                       />
                                     ) : (
                                       <div className="w-full h-full bg-linear-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-                                        <User className="w-16 h-16 sm:w-20 sm:h-20 text-slate-300" />
+                                        <User className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 text-slate-300" />
                                       </div>
                                     )}
                                     {isSelected && (
@@ -489,19 +513,19 @@ export default function VotePage() {
                                     )}
                                   </div>
 
-                                  <h3 className="mt-4 font-bold text-slate-800 text-sm sm:text-base leading-snug">
+                                  <h3 className="mt-4 font-bold text-slate-800 text-base sm:text-lg lg:text-xl leading-snug">
                                     {candidate.student.full_name}
                                   </h3>
 
                                   {candidate.partylist ? (
                                     <span
-                                      className="inline-flex items-center mt-2 text-xs font-bold px-3 py-1 rounded-full text-white shadow-sm"
+                                      className="inline-flex items-center mt-2 text-xs sm:text-sm font-bold px-3 py-1 rounded-full text-white shadow-sm"
                                       style={{ backgroundColor: candidate.partylist.color || "#64748b" }}
                                     >
                                       {candidate.partylist.name}
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center mt-2 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200/50">
+                                    <span className="inline-flex items-center mt-2 text-xs sm:text-sm font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200/50">
                                       Independent
                                     </span>
                                   )}
@@ -509,23 +533,23 @@ export default function VotePage() {
 
                                 {/* Candidate details — always visible */}
                                 {(candidate.platform || candidate.vision || candidate.mission) && (
-                                  <div className="mt-5 pt-5 border-t border-slate-100/80 space-y-3.5">
+                                  <div className="mt-5 pt-5 border-t border-slate-100/80 space-y-4">
                                     {candidate.platform && (
                                       <div className="bg-linear-to-r from-sky-50/80 to-transparent rounded-xl px-4 py-3">
-                                        <p className="text-[10px] font-extrabold uppercase tracking-widest text-sky-500 mb-1">Platform</p>
-                                        <p className="text-sm text-slate-600 leading-relaxed">{candidate.platform}</p>
+                                        <p className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-sky-500 mb-1">Platform</p>
+                                        <p className="text-sm sm:text-base text-slate-600 leading-relaxed">{candidate.platform}</p>
                                       </div>
                                     )}
                                     {candidate.vision && (
                                       <div className="bg-linear-to-r from-violet-50/80 to-transparent rounded-xl px-4 py-3">
-                                        <p className="text-[10px] font-extrabold uppercase tracking-widest text-violet-500 mb-1">Vision</p>
-                                        <p className="text-sm text-slate-600 leading-relaxed">{candidate.vision}</p>
+                                        <p className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-violet-500 mb-1">Vision</p>
+                                        <p className="text-sm sm:text-base text-slate-600 leading-relaxed">{candidate.vision}</p>
                                       </div>
                                     )}
                                     {candidate.mission && (
                                       <div className="bg-linear-to-r from-emerald-50/80 to-transparent rounded-xl px-4 py-3">
-                                        <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-500 mb-1">Mission</p>
-                                        <p className="text-sm text-slate-600 leading-relaxed">{candidate.mission}</p>
+                                        <p className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-emerald-500 mb-1">Mission</p>
+                                        <p className="text-sm sm:text-base text-slate-600 leading-relaxed">{candidate.mission}</p>
                                       </div>
                                     )}
                                   </div>
@@ -536,7 +560,7 @@ export default function VotePage() {
                                   <Button
                                     onClick={() => handleVoteSelect(position.id, candidate.id, maxVotes)}
                                     size="sm"
-                                    className={`rounded-xl px-8 py-2.5 h-auto text-sm font-bold transition-all duration-300 shadow-md hover:shadow-lg ${
+                                    className={`rounded-xl px-8 lg:px-10 py-2.5 lg:py-3 h-auto text-sm lg:text-base font-bold transition-all duration-300 shadow-md hover:shadow-lg ${
                                       isSelected
                                         ? "bg-linear-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white shadow-emerald-200/50 hover:shadow-emerald-300/50"
                                         : "bg-linear-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white shadow-sky-200/50 hover:shadow-sky-300/50 hover:scale-105"
