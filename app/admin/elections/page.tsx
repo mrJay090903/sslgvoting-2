@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Play, Pause, Eye } from "lucide-react";
+import { Plus, Play, Pause, Eye, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface Election {
   id: string;
@@ -23,17 +24,20 @@ interface Election {
   created_at: string;
 }
 
+const emptyForm = {
+  title: "",
+  description: "",
+  start_date: "",
+  end_date: "",
+  allow_abstain: false,
+};
+
 export default function ElectionsPage() {
   const [elections, setElections] = useState<Election[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    start_date: "",
-    end_date: "",
-    allow_abstain: false,
-  });
+  const [editingElection, setEditingElection] = useState<Election | null>(null);
+  const [formData, setFormData] = useState({ ...emptyForm });
 
   useEffect(() => {
     fetchElections();
@@ -52,25 +56,88 @@ export default function ElectionsPage() {
     setLoading(false);
   };
 
+  const openCreate = () => {
+    setEditingElection(null);
+    setFormData({ ...emptyForm });
+    setDialogOpen(true);
+  };
+
+  const openEdit = (election: Election) => {
+    setEditingElection(election);
+    setFormData({
+      title: election.title,
+      description: election.description || "",
+      // datetime-local requires format: "YYYY-MM-DDTHH:mm"
+      start_date: election.start_date ? election.start_date.slice(0, 16) : "",
+      end_date: election.end_date ? election.end_date.slice(0, 16) : "",
+      allow_abstain: election.allow_abstain,
+    });
+    setDialogOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const supabase = createClient();
 
-    const { data: { user } } = await supabase.auth.getUser();
+    if (editingElection) {
+      // Update existing election
+      const { error } = await supabase
+        .from("elections")
+        .update({
+          title: formData.title,
+          description: formData.description || null,
+          start_date: formData.start_date,
+          end_date: formData.end_date,
+          allow_abstain: formData.allow_abstain,
+        })
+        .eq("id", editingElection.id);
 
-    const { error } = await supabase.from("elections").insert({
-      title: formData.title,
-      description: formData.description || null,
-      start_date: formData.start_date,
-      end_date: formData.end_date,
-      status: "draft",
-      allow_abstain: formData.allow_abstain,
-      created_by: user?.id,
-    });
+      if (error) {
+        toast.error("Failed to update election");
+      } else {
+        toast.success("Election updated");
+        await fetchElections();
+        resetForm();
+      }
+    } else {
+      // Create new election
+      const { data: { user } } = await supabase.auth.getUser();
 
-    if (!error) {
+      const { error } = await supabase.from("elections").insert({
+        title: formData.title,
+        description: formData.description || null,
+        start_date: formData.start_date,
+        end_date: formData.end_date,
+        status: "draft",
+        allow_abstain: formData.allow_abstain,
+        created_by: user?.id,
+      });
+
+      if (error) {
+        toast.error("Failed to create election");
+      } else {
+        toast.success("Election created");
+        await fetchElections();
+        resetForm();
+      }
+    }
+  };
+
+  const handleDelete = async (election: Election) => {
+    if (election.status === "open") {
+      toast.error("Cannot delete an open election. Close it first.");
+      return;
+    }
+    if (!confirm(`Delete election "${election.title}"? This cannot be undone.`)) return;
+
+    const supabase = createClient();
+    const { error } = await supabase.from("elections").delete().eq("id", election.id);
+
+    if (error) {
+      toast.error("Failed to delete election");
+    } else {
+      toast.success("Election deleted");
       await fetchElections();
-      resetForm();
     }
   };
 
@@ -97,13 +164,8 @@ export default function ElectionsPage() {
   };
 
   const resetForm = () => {
-    setFormData({
-      title: "",
-      description: "",
-      start_date: "",
-      end_date: "",
-      allow_abstain: false,
-    });
+    setFormData({ ...emptyForm });
+    setEditingElection(null);
     setDialogOpen(false);
   };
 
@@ -118,7 +180,7 @@ export default function ElectionsPage() {
           <h1 className="text-3xl font-bold">Elections</h1>
           <p className="text-muted-foreground">Create and manage elections</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button onClick={openCreate}>
           <Plus className="w-4 h-4 mr-2" />
           Create Election
         </Button>
@@ -172,7 +234,7 @@ export default function ElectionsPage() {
                         {election.status.toUpperCase()}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
+                    <TableCell className="text-right space-x-1">
                       {election.status === "draft" && (
                         <Button
                           variant="ghost"
@@ -201,6 +263,21 @@ export default function ElectionsPage() {
                         <Eye className="w-4 h-4 mr-1" />
                         Results
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(election)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(election)}
+                        className="hover:bg-red-100 hover:text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -213,7 +290,7 @@ export default function ElectionsPage() {
       <Dialog open={dialogOpen} onOpenChange={(open) => !open && resetForm()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Election</DialogTitle>
+            <DialogTitle>{editingElection ? "Edit Election" : "Create New Election"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -278,7 +355,7 @@ export default function ElectionsPage() {
               <Button type="button" variant="outline" onClick={resetForm}>
                 Cancel
               </Button>
-              <Button type="submit">Create Election</Button>
+              <Button type="submit">{editingElection ? "Save Changes" : "Create Election"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

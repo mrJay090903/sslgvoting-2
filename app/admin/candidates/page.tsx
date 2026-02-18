@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, UserCircle, Upload, X } from "lucide-react";
+import { Plus, Trash2, UserCircle, Upload, X, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
 
@@ -52,6 +52,7 @@ export default function CandidatesPage() {
   const [partylists, setPartylists] = useState<Partylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingCandidate, setEditingCandidate] = useState<Candidate | null>(null);
   const [uploading, setUploading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -189,6 +190,32 @@ export default function CandidatesPage() {
     }
   };
 
+  const openEdit = (candidate: Candidate) => {
+    setEditingCandidate(candidate);
+    setFormData({
+      student_id: candidate.student ? (students.find(s => s["Student ID"] === candidate.student!["Student ID"])?.id || "") : "",
+      position_id: "", // will be resolved below
+      partylist_id: candidate.partylist ? (partylists.find(p => p.name === candidate.partylist!.name)?.id || "independent") : "independent",
+      platform: candidate.platform || "",
+      vision: candidate.vision || "",
+      mission: candidate.mission || "",
+      photo_url: candidate.photo_url || "",
+      is_active: candidate.is_active,
+    });
+    // Resolve position id
+    const pos = positions.find(p => p.name === candidate.position?.name);
+    if (pos) {
+      setFormData(prev => ({ ...prev, position_id: pos.id }));
+    }
+    // Resolve student id
+    const stu = students.find(s => s["Full Name"] === candidate.student?.["Full Name"]);
+    if (stu) {
+      setFormData(prev => ({ ...prev, student_id: stu.id }));
+    }
+    setPhotoPreview(candidate.photo_url || null);
+    setDialogOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -198,6 +225,34 @@ export default function CandidatesPage() {
         ? null 
         : formData.partylist_id;
       
+      if (editingCandidate) {
+        // Update existing candidate
+        const response = await fetch(`/api/candidates?id=${editingCandidate.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            position_id: formData.position_id,
+            partylist_id: partylistId,
+            platform: formData.platform || null,
+            vision: formData.vision || null,
+            mission: formData.mission || null,
+            photo_url: formData.photo_url || null,
+            is_active: formData.is_active,
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          toast.error(result.error || 'Failed to update candidate');
+        } else {
+          toast.success('Candidate updated successfully');
+          await fetchData();
+          resetForm();
+        }
+        return;
+      }
+
+      // Create new candidate
       const response = await fetch('/api/candidates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,7 +275,6 @@ export default function CandidatesPage() {
       } else {
         toast.success('Candidate added successfully');
         await fetchData();
-        // Close dialog and reset form without deleting the saved photo
         setFormData({
           student_id: "",
           position_id: "",
@@ -264,8 +318,8 @@ export default function CandidatesPage() {
   };
 
   const resetForm = () => {
-    // If there's an uploaded photo that wasn't saved, delete it
-    if (formData.photo_url && photoPreview) {
+    // If there's an uploaded photo that wasn't saved and we're NOT editing, delete it
+    if (!editingCandidate && formData.photo_url && photoPreview) {
       const filename = formData.photo_url.split('/').pop();
       fetch(`/api/upload?filename=${filename}`, { method: 'DELETE' }).catch(() => {});
     }
@@ -280,6 +334,7 @@ export default function CandidatesPage() {
       is_active: true,
     });
     setPhotoPreview(null);
+    setEditingCandidate(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -389,7 +444,15 @@ export default function CandidatesPage() {
                         {candidate.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(candidate)}
+                        className="h-8 w-8 p-0 hover:bg-sky-100 hover:text-sky-600"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -410,27 +473,34 @@ export default function CandidatesPage() {
       <Dialog open={dialogOpen} onOpenChange={(open) => !open && resetForm()}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-slate-800">Add New Candidate</DialogTitle>
+            <DialogTitle className="text-slate-800">{editingCandidate ? "Edit Candidate" : "Add New Candidate"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="student_id" className="text-slate-700">Student *</Label>
-              <Select
-                value={formData.student_id}
-                onValueChange={(value) => setFormData({ ...formData, student_id: value })}
-              >
-                <SelectTrigger className="border-slate-200">
-                  <SelectValue placeholder="Select a student" />
-                </SelectTrigger>
-                <SelectContent>
-                  {students.map((student) => (
-                    <SelectItem key={student.id} value={student.id}>
-                      {student["Full Name"]} ({student["Student ID"]})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {editingCandidate ? (
+              <div className="space-y-1">
+                <Label className="text-slate-700">Student</Label>
+                <p className="text-sm text-slate-600 font-medium px-1">{editingCandidate.student?.["Full Name"]} ({editingCandidate.student?.["Student ID"]})</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="student_id" className="text-slate-700">Student *</Label>
+                <Select
+                  value={formData.student_id}
+                  onValueChange={(value) => setFormData({ ...formData, student_id: value })}
+                >
+                  <SelectTrigger className="border-slate-200">
+                    <SelectValue placeholder="Select a student" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {students.map((student) => (
+                      <SelectItem key={student.id} value={student.id}>
+                        {student["Full Name"]} ({student["Student ID"]})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="position_id" className="text-slate-700">Position *</Label>
@@ -588,7 +658,7 @@ export default function CandidatesPage() {
                 disabled={uploading}
                 className="bg-gradient-to-r from-sky-500 to-blue-600 text-white hover:from-sky-600 hover:to-blue-700"
               >
-                Add Candidate
+                {editingCandidate ? "Save Changes" : "Add Candidate"}
               </Button>
             </DialogFooter>
           </form>

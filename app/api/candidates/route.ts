@@ -3,9 +3,6 @@ import { NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/auth/admin-guard';
 import { checkRateLimit, rateLimitResponse, getClientIdentifier } from '@/lib/security/rate-limit';
 import { validateInput, candidateSchema, uuidSchema } from '@/lib/security/validation';
-import { unlink } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
 
 // Use service role key to bypass RLS
 const supabaseAdmin = createClient(
@@ -83,6 +80,64 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PATCH(request: Request) {
+  try {
+    const clientIp = getClientIdentifier(request);
+    const { allowed, resetIn } = checkRateLimit(`candidates:patch:${clientIp}`);
+    if (!allowed) return rateLimitResponse(resetIn);
+
+    const auth = await verifyAdmin();
+    if (!auth.authorized) return auth.error;
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+    }
+
+    const idValidation = validateInput(uuidSchema, id);
+    if (!idValidation.success) {
+      return NextResponse.json({ error: 'Invalid ID format' }, { status: 400 });
+    }
+
+    const body = await request.json();
+
+    // Build partial update — only allow known candidate fields
+    const allowedFields = ['position_id', 'partylist_id', 'platform', 'vision', 'mission', 'photo_url', 'is_active'];
+    const updateData: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+      if (key in body) {
+        updateData[key] = body[key];
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('candidates')
+      .update(updateData)
+      .eq('id', id)
+      .select(`
+        *,
+        student:students(*),
+        position:positions(name),
+        partylist:partylists(name, color)
+      `)
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: 'Failed to update candidate' }, { status: 500 });
+    }
+
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     // Rate limiting
@@ -124,18 +179,16 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Failed to delete candidate' }, { status: 500 });
     }
 
-    // If candidate had a photo, delete the file
+    // If candidate had a photo, delete from Supabase Storage
     if (candidate?.photo_url) {
       try {
-        // Extract filename from URL (e.g., /uploads/candidates/filename.jpg)
-        const filename = path.basename(candidate.photo_url);
-        const filePath = path.join(process.cwd(), 'public', 'uploads', 'candidates', filename);
-        
-        if (existsSync(filePath)) {
-          await unlink(filePath);
+        // Extract just the filename from the full public URL
+        const filename = candidate.photo_url.split('/').pop();
+        if (filename) {
+          await supabaseAdmin.storage.from('candidate-photos').remove([filename]);
         }
       } catch (fileError) {
-        console.error('Failed to delete candidate photo:', fileError);
+        console.error('Failed to delete candidate photo from storage:', fileError);
         // Continue even if file deletion fails
       }
     }
