@@ -574,10 +574,7 @@ export default function AdminDashboard() {
               <span className="text-sm font-medium text-sky-700">Election Active</span>
             </div>
           )}
-          <Button className="bg-gradient-to-r from-sky-500 to-blue-600 text-white hover:from-sky-600 hover:to-blue-700 shadow-lg shadow-sky-500/25">
-            <Download className="w-4 h-4 mr-2" />
-            Download Report
-          </Button>
+
         </div>
       </div>
 
