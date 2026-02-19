@@ -442,35 +442,113 @@ export default function StudentsPage() {
     }
   };
 
+  // Normalize name to handle different formats (e.g., "John Doe" vs "Doe, John" vs "Doe John")
+  const normalizeName = (name: string): string => {
+    // Remove punctuation and extra spaces, convert to lowercase
+    const cleaned = name
+      .toLowerCase()
+      .replace(/[.,\-_]/g, ' ') // Replace punctuation with spaces
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .trim();
+    
+    // Split into words and sort alphabetically to handle different order
+    const words = cleaned.split(' ').sort();
+    return words.join(' ');
+  };
+
+  const deleteAllDuplicates = async () => {
+    if (!confirm("This will delete ALL duplicate students found (keeping the first entry in each group). This action cannot be undone. Continue?")) {
+      return;
+    }
+
+    try {
+      // Collect all student IDs to delete (all except the first one in each group)
+      const studentIdsToDelete: string[] = [];
+      
+      duplicatesList.forEach(group => {
+        // Skip the first student in each group, delete the rest
+        group.students.slice(1).forEach((student: Student) => {
+          studentIdsToDelete.push(student.id);
+        });
+      });
+
+      if (studentIdsToDelete.length === 0) {
+        toast.info("No duplicates to delete");
+        return;
+      }
+
+      toast.info(`Deleting ${studentIdsToDelete.length} duplicate student(s)...`);
+
+      // Delete in batches to avoid rate limiting
+      const batchSize = 10;
+      let deletedCount = 0;
+      
+      for (let i = 0; i < studentIdsToDelete.length; i += batchSize) {
+        const batch = studentIdsToDelete.slice(i, i + batchSize);
+        
+        await Promise.all(
+          batch.map(studentId =>
+            fetch(`/api/students?id=${studentId}`, {
+              method: 'DELETE',
+            })
+          )
+        );
+        
+        deletedCount += batch.length;
+        
+        // Add a small delay between batches to avoid rate limiting
+        if (i + batchSize < studentIdsToDelete.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      toast.success(`Successfully deleted ${deletedCount} duplicate student(s)`);
+      setCheckDuplicatesDialogOpen(false);
+      setDuplicatesList([]);
+      await fetchStudents();
+    } catch (err) {
+      console.error('Error deleting duplicates:', err);
+      toast.error("Error deleting duplicate students");
+    }
+  };
+
   const checkDuplicateStudents = () => {
-    // Find duplicates based on Student ID and Full Name
-    const seen = new Map<string, Student[]>(); // key -> array of students
+    // Find duplicates based on normalized name with different Student IDs
+    const nameGroups = new Map<string, Student[]>(); // normalized name -> array of students
 
     students.forEach(student => {
-      const key = `${student["Student ID"]}_${student["Full Name"]}`; // Composite key
-      if (!seen.has(key)) {
-        seen.set(key, []);
+      const normalizedName = normalizeName(student["Full Name"]);
+      if (!nameGroups.has(normalizedName)) {
+        nameGroups.set(normalizedName, []);
       }
-      seen.get(key)!.push(student);
+      nameGroups.get(normalizedName)!.push(student);
     });
 
-    // Filter only groups with duplicates
+    // Filter only groups with duplicates (same name, different student IDs)
     const duplicateGroups: any[] = [];
-    seen.forEach((group, key) => {
+    nameGroups.forEach((group, normalizedName) => {
       if (group.length > 1) {
-        duplicateGroups.push({
-          key,
-          count: group.length,
-          students: group
-        });
+        // Check if they have different student IDs
+        const studentIds = new Set(group.map(s => s["Student ID"]));
+        if (studentIds.size > 1) {
+          duplicateGroups.push({
+            normalizedName,
+            count: group.length,
+            students: group,
+            studentIds: Array.from(studentIds)
+          });
+        }
       }
     });
+
+    // Sort by count (most duplicates first)
+    duplicateGroups.sort((a, b) => b.count - a.count);
 
     setDuplicatesList(duplicateGroups);
     if (duplicateGroups.length === 0) {
-      toast.success("No duplicate students found!");
+      toast.success("No duplicate student names found!");
     } else {
-      toast.info(`Found ${duplicateGroups.length} duplicate group(s) with ${duplicateGroups.reduce((sum, g) => sum + (g.count - 1), 0)} extra entries`);
+      toast.warning(`Found ${duplicateGroups.length} duplicate name group(s) with different Student IDs`);
     }
     setCheckDuplicatesDialogOpen(true);
   };
@@ -1089,13 +1167,13 @@ export default function StudentsPage() {
 
       {/* Check Duplicates Dialog */}
       <Dialog open={checkDuplicatesDialogOpen} onOpenChange={setCheckDuplicatesDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Duplicate Students Found</DialogTitle>
+            <DialogTitle>Duplicate Student Names Detected</DialogTitle>
             <DialogDescription>
               {duplicatesList.length === 0 
-                ? "No duplicate entries found" 
-                : `Found ${duplicatesList.length} duplicate group(s) with ${duplicatesList.reduce((sum, g) => sum + (g.count - 1), 0)} extra entries`}
+                ? "No duplicate names found with different Student IDs" 
+                : `Found ${duplicatesList.length} duplicate name group(s) with different Student IDs`}
             </DialogDescription>
           </DialogHeader>
           
@@ -1104,41 +1182,61 @@ export default function StudentsPage() {
               {duplicatesList.map((group, index) => (
                 <div key={index} className="border border-orange-200 rounded-lg p-4 bg-orange-50">
                   <div className="mb-3">
-                    <h3 className="font-semibold text-slate-800">Group {index + 1}: {group.count} duplicates</h3>
+                    <h3 className="font-semibold text-slate-800">Group {index + 1}: {group.count} students with similar names</h3>
                     <p className="text-sm text-slate-600 mt-1">
-                      <span className="font-medium">ID:</span> {group.students[0]["Student ID"]} | 
-                      <span className="font-medium ml-2">Name:</span> {group.students[0]["Full Name"]}
+                      <span className="font-medium">Normalized Name:</span> {group.normalizedName}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      <span className="font-medium">Different Student IDs:</span> {group.studentIds.join(', ')}
                     </p>
                   </div>
                   <div className="space-y-2">
                     {group.students.map((student: any, idx: number) => (
-                      <div key={student.id} className="flex items-center justify-between p-2 bg-white rounded border border-orange-100 text-sm">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className={idx === 0 ? "bg-green-100 text-green-800 border-green-300" : "bg-red-100 text-red-800 border-red-300"}>
-                              {idx === 0 ? "Keep" : "Remove"}
-                            </Badge>
-                            <span className="text-slate-700">{student["Full Name"]}</span>
+                      <div key={student.id} className={`p-3 rounded border text-sm ${idx === 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className={idx === 0 ? "bg-green-100 text-green-800 border-green-300" : "bg-red-100 text-red-800 border-red-300"}>
+                                {idx === 0 ? "✓ KEEP" : "✗ DELETE"}
+                              </Badge>
+                              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">
+                                {student["Student ID"]}
+                              </Badge>
+                              <span className="font-medium text-slate-700">{student["Full Name"]}</span>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              Grade {student.Grade} • {student.Email || "No email"} • {student["Contact Number"] || "No contact"}
+                            </p>
                           </div>
-                          <p className="text-xs text-slate-500 mt-1">
-                            Grade {student.Grade} • {student.Email || "No email"}
-                          </p>
+                          <span className="text-xs text-slate-400 ml-2">{student.id.slice(0, 8)}...</span>
                         </div>
-                        <span className="text-xs text-slate-400">{student.id.slice(0, 8)}...</span>
                       </div>
                     ))}
                   </div>
                 </div>
               ))}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <span className="font-semibold">ℹ️ Info:</span> These students have similar names but different Student IDs. This could indicate:
+                </p>
+                <ul className="text-xs text-blue-700 mt-2 ml-4 space-y-1 list-disc">
+                  <li>Different name formats (e.g., "John Doe" vs "Doe, John")</li>
+                  <li>Typos or variations in name spelling</li>
+                  <li>Legitimate different students with similar names</li>
+                </ul>
+                <p className="text-xs text-blue-700 mt-2 font-medium">
+                  Please review carefully before taking action.
+                </p>
+              </div>
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <p className="text-sm text-yellow-800">
-                  <span className="font-semibold">Note:</span> The first entry in each group will be kept. Click "Remove Duplicates" to delete the extra entries.
+                  <span className="font-semibold">⚠️ Warning:</span> Clicking "Delete All Duplicates" will keep the first student in each group (marked with ✓ KEEP) and permanently delete all others (marked with ✗ DELETE). This action cannot be undone.
                 </p>
               </div>
             </div>
           ) : (
             <div className="py-8 text-center">
-              <p className="text-slate-500">No duplicate students found in the system</p>
+              <p className="text-slate-500">No duplicate student names found with different Student IDs</p>
             </div>
           )}
 
@@ -1151,13 +1249,10 @@ export default function StudentsPage() {
             </Button>
             {duplicatesList.length > 0 && (
               <Button
-                onClick={() => {
-                  setCheckDuplicatesDialogOpen(false);
-                  removeDuplicateStudents();
-                }}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
+                onClick={deleteAllDuplicates}
+                className="bg-red-600 hover:bg-red-700 text-white"
               >
-                Remove These Duplicates
+                Delete All Duplicates ({duplicatesList.reduce((sum, g) => sum + (g.count - 1), 0)} students)
               </Button>
             )}
           </DialogFooter>

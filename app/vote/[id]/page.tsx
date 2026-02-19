@@ -502,12 +502,16 @@ export default function VotePage() {
                                         src={candidate.photo_url}
                                         alt={candidate.student.full_name}
                                         className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none';
+                                          const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                          if (fallback) fallback.style.display = 'flex';
+                                        }}
                                       />
-                                    ) : (
-                                      <div className="w-full h-full bg-linear-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-                                        <User className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 text-slate-300" />
-                                      </div>
-                                    )}
+                                    ) : null}
+                                    <div className={`w-full h-full bg-linear-to-br from-slate-100 to-slate-50 flex items-center justify-center ${candidate.photo_url ? 'hidden' : ''}`}>
+                                      <User className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 text-slate-300" />
+                                    </div>
                                     {isSelected && (
                                       <div className="absolute inset-0 bg-linear-to-t from-sky-500/20 to-transparent" />
                                     )}

@@ -457,6 +457,14 @@ export default function CandidatesPage() {
                           width={40}
                           height={40}
                           className="w-10 h-10 rounded-full object-cover"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              parent.innerHTML = '<div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center"><svg class="w-6 h-6 text-slate-400" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M12 14c-6 0-8 3-8 5v1h16v-1c0-2-2-5-8-5z"/></svg></div>';
+                            }
+                          }}
                         />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">

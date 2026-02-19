@@ -43,6 +43,7 @@ interface DashboardStats {
   positionParticipation: any[];
   gradeParticipation: any[];
   mostCompetitivePositions: any[];
+  votedStudents: any[];
 }
 
 const CHART_COLORS = ['#0ea5e9', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899'];
@@ -96,6 +97,7 @@ export default function AdminDashboard() {
     positionParticipation: [],
     gradeParticipation: [],
     mostCompetitivePositions: [],
+    votedStudents: [],
   });
   const [loading, setLoading] = useState(true);
 
@@ -477,6 +479,39 @@ export default function AdminDashboard() {
         }
       }
 
+      // Fetch students who have voted with their details
+      let votedStudents: any[] = [];
+      if (activeElection) {
+        const { data: votingSessions } = await supabase
+          .from("voting_sessions")
+          .select("student_id, created_at")
+          .eq("election_id", activeElection.id)
+          .eq("has_voted", true)
+          .order("created_at", { ascending: false });
+
+        if (votingSessions && votingSessions.length > 0) {
+          const studentIds = votingSessions.map(v => v.student_id);
+          
+          const { data: studentsData } = await supabase
+            .from("students")
+            .select("id, \"Full Name\", \"Student ID\", \"Grade\"")
+            .in("id", studentIds);
+
+          if (studentsData) {
+            votedStudents = votingSessions.map(vs => {
+              const student = studentsData.find(s => s.id === vs.student_id);
+              return {
+                id: vs.student_id,
+                name: student?.["Full Name"] || "Unknown",
+                studentId: student?.["Student ID"] || "N/A",
+                grade: student?.["Grade"] || "N/A",
+                votedAt: vs.created_at
+              };
+            });
+          }
+        }
+      }
+
       setStats({
         totalStudents: totalStudents || 0,
         activeStudents: activeStudents || 0,
@@ -495,6 +530,7 @@ export default function AdminDashboard() {
         positionParticipation,
         gradeParticipation,
         mostCompetitivePositions,
+        votedStudents,
       });
 
       setLoading(false);
@@ -745,50 +781,97 @@ export default function AdminDashboard() {
                 </div>
                 Votes by Position
               </CardTitle>
-              <CardDescription className="text-slate-500">Voting results per position</CardDescription>
+              <CardDescription className="text-slate-500">Top candidates by position with vote counts and percentages</CardDescription>
             </CardHeader>
             <CardContent className="p-6">
-              <div className="space-y-5 max-h-[500px] overflow-y-auto">
-                {stats.candidateVotesByPosition.slice(0, 4).map((position: any) => (
-                  <div key={position.positionId} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full shadow-sm"
-                          style={{
-                            backgroundColor: POSITION_COLORS[position.positionName] || CHART_COLORS[0]
-                          }}
-                        />
-                        <h3 className="font-semibold text-slate-800 text-sm">{position.positionName}</h3>
+              <div className="space-y-6 max-h-[500px] overflow-y-auto">
+                {stats.candidateVotesByPosition.map((position: any) => {
+                  const totalVotesForPosition = position.candidates?.reduce((sum: number, c: any) => sum + c.votes, 0) || 0;
+                  const positionColor = POSITION_COLORS[position.positionName] || CHART_COLORS[0];
+                  
+                  return (
+                    <div key={position.positionId} className="space-y-3 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full shadow-sm"
+                            style={{ backgroundColor: positionColor }}
+                          />
+                          <h3 className="font-bold text-slate-800 text-base">{position.positionName}</h3>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                            {totalVotesForPosition} {totalVotesForPosition === 1 ? 'vote' : 'votes'}
+                          </span>
+                          <span className="text-xs font-medium text-slate-500">
+                            {position.candidates?.length || 0} candidates
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-xs font-bold text-slate-600">{position.candidates?.length || 0} candidates</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {position.candidates.slice(0, 3).map((candidate: any, index: number) => {
-                        const totalVotesForPosition = position.candidates.reduce((sum: number, c: any) => sum + c.votes, 0);
-                        const percentage = totalVotesForPosition > 0 ? (candidate.votes / totalVotesForPosition) * 100 : 0;
+                      
+                      <div className="space-y-2">
+                        {position.candidates?.slice(0, 5).map((candidate: any, index: number) => {
+                          const percentage = totalVotesForPosition > 0 ? (candidate.votes / totalVotesForPosition) * 100 : 0;
+                          const isLeader = index === 0 && candidate.votes > 0;
 
-                        return (
-                          <div key={candidate.id} className="space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium text-slate-700 truncate">{candidate.name || 'Unknown'}</span>
-                              <span className="text-xs font-bold text-slate-800 flex-shrink-0 ml-2">{candidate.votes}</span>
+                          return (
+                            <div 
+                              key={candidate.id} 
+                              className={`p-2.5 rounded-lg transition-all ${
+                                isLeader 
+                                  ? 'bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200' 
+                                  : 'bg-slate-50/50 hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold shrink-0 ${
+                                    index === 0 && candidate.votes > 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' :
+                                    index === 1 && candidate.votes > 0 ? 'bg-gradient-to-br from-slate-300 to-slate-400 text-white' :
+                                    index === 2 && candidate.votes > 0 ? 'bg-gradient-to-br from-orange-300 to-orange-400 text-white' :
+                                    'bg-slate-200 text-slate-600'
+                                  }`}>
+                                    {index + 1}
+                                  </span>
+                                  <span className="text-sm font-semibold text-slate-800 truncate">
+                                    {candidate.name || 'Unknown'}
+                                  </span>
+                                  {candidate.partylist && (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <div
+                                        className="w-2 h-2 rounded-full"
+                                        style={{ backgroundColor: candidate.partylist.color }}
+                                      />
+                                      <span className="text-xs text-slate-500">{candidate.partylist.name}</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-baseline gap-2 shrink-0 ml-2">
+                                  <span className="text-sm font-bold text-slate-800">{candidate.votes}</span>
+                                  <span className="text-xs text-slate-500">({percentage.toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                              <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                <div
+                                  className="h-2 rounded-full transition-all duration-500"
+                                  style={{ 
+                                    width: `${Math.max(percentage, candidate.votes > 0 ? 3 : 0)}%`,
+                                    backgroundColor: isLeader ? '#f59e0b' : positionColor
+                                  }}
+                                ></div>
+                              </div>
                             </div>
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className="bg-gradient-to-r from-cyan-500 to-blue-600 h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${Math.max(percentage, 3)}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {position.candidates.length > 3 && (
-                        <p className="text-xs text-slate-500 italic py-1">+{position.candidates.length - 3} more candidates</p>
-                      )}
+                          );
+                        })}
+                        {position.candidates && position.candidates.length > 5 && (
+                          <p className="text-xs text-slate-500 text-center italic py-1">
+                            +{position.candidates.length - 5} more candidates
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -1065,6 +1148,107 @@ export default function AdminDashboard() {
                   </div>
                 );
               })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Students Who Have Voted - Full Width */}
+      {stats.activeElection && stats.votedStudents.length > 0 && (
+        <Card className="bg-white/80 backdrop-blur border-0 shadow-lg overflow-hidden">
+          <CardHeader className="border-b border-slate-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-slate-800 flex items-center gap-2">
+                  <div className="p-2 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg">
+                    <CheckCircle className="w-4 h-4 text-white" />
+                  </div>
+                  Students Who Have Voted
+                </CardTitle>
+                <CardDescription className="text-slate-500 mt-1">
+                  Real-time list of students who have submitted their votes
+                </CardDescription>
+              </div>
+              <Badge className="bg-emerald-100 text-emerald-700 text-sm px-3 py-1.5 font-bold">
+                {stats.votedStudents.length} / {stats.totalStudents} Students
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="max-h-96 overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {stats.votedStudents.map((student: any, index: number) => (
+                  <div
+                    key={student.id}
+                    className="p-3 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-lg hover:shadow-md transition-all duration-200"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0">
+                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm">
+                          {student.name?.charAt(0) || "?"}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-slate-800 text-sm truncate">
+                          {student.name}
+                        </h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge className="bg-slate-100 text-slate-600 text-xs px-1.5 py-0.5">
+                            {student.studentId}
+                          </Badge>
+                          <Badge className="bg-emerald-100 text-emerald-700 text-xs px-1.5 py-0.5">
+                            Grade {student.grade}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {new Date(student.votedAt).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary Stats */}
+            <div className="mt-6 pt-4 border-t border-slate-200">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center p-3 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500 mb-1">Total Voted</p>
+                  <p className="text-2xl font-bold text-emerald-600">{stats.votedStudents.length}</p>
+                </div>
+                <div className="text-center p-3 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500 mb-1">Pending</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {stats.totalStudents - stats.votedStudents.length}
+                  </p>
+                </div>
+                <div className="text-center p-3 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500 mb-1">Turnout Rate</p>
+                  <p className="text-2xl font-bold text-sky-600">
+                    {stats.totalStudents > 0 
+                      ? ((stats.votedStudents.length / stats.totalStudents) * 100).toFixed(1) 
+                      : 0}%
+                  </p>
+                </div>
+                <div className="text-center p-3 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500 mb-1">Latest Vote</p>
+                  <p className="text-sm font-bold text-slate-700">
+                    {stats.votedStudents.length > 0
+                      ? new Date(stats.votedStudents[0].votedAt).toLocaleTimeString("en-US", {
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        })
+                      : "N/A"}
+                  </p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
