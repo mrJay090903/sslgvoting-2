@@ -164,14 +164,46 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check for duplicate position votes
-    const positionIds = candidates.map(c => c.position_id);
-    const uniquePositions = new Set(positionIds);
-    if (uniquePositions.size !== positionIds.length) {
+    // Check that votes per position don't exceed max_votes
+    const votesByPosition: Record<string, string[]> = {};
+    for (const candidate of candidates) {
+      if (!votesByPosition[candidate.position_id]) {
+        votesByPosition[candidate.position_id] = [];
+      }
+      votesByPosition[candidate.position_id].push(candidate.id);
+    }
+
+    // Fetch position max_votes to validate
+    const positionIdsToCheck = Object.keys(votesByPosition);
+    const { data: positionsData, error: positionsError } = await supabaseAdmin
+      .from('positions')
+      .select('id, max_votes')
+      .in('id', positionIdsToCheck);
+
+    if (positionsError || !positionsData) {
       return NextResponse.json(
-        { error: 'Cannot vote for multiple candidates in the same position' }, 
-        { status: 400 }
+        { error: 'Failed to validate positions' }, 
+        { status: 500 }
       );
+    }
+
+    for (const pos of positionsData) {
+      const votesForPosition = votesByPosition[pos.id]?.length || 0;
+      const maxVotes = pos.max_votes || 1;
+      if (votesForPosition > maxVotes) {
+        return NextResponse.json(
+          { error: `Too many votes for a position. Maximum allowed: ${maxVotes}` }, 
+          { status: 400 }
+        );
+      }
+      // Check no duplicate candidates within same position
+      const uniqueCandidates = new Set(votesByPosition[pos.id]);
+      if (uniqueCandidates.size !== votesForPosition) {
+        return NextResponse.json(
+          { error: 'Cannot vote for the same candidate twice' }, 
+          { status: 400 }
+        );
+      }
     }
 
     // Prepare votes with server-validated data
