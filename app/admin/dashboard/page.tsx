@@ -345,12 +345,13 @@ export default function AdminDashboard() {
 
             // Get most competitive positions (closest races between top candidates)
             mostCompetitivePositions = candidateVotesByPosition
-              .filter((pos: any) => (pos.candidates?.length || 0) >= 2) // Only positions with 2+ candidates
               .map((pos: any) => {
-                const votesForPosition = pos.candidates?.reduce((sum: number, c: any) => sum + c.votes, 0) || 0;
+                // Only count candidates who actually received votes
+                const candidatesWithVotes = (pos.candidates || []).filter((c: any) => c.votes > 0);
+                const votesForPosition = candidatesWithVotes.reduce((sum: number, c: any) => sum + c.votes, 0);
                 
                 // Sort candidates by votes descending
-                const sortedCandidates = [...(pos.candidates || [])].sort((a: any, b: any) => b.votes - a.votes);
+                const sortedCandidates = [...candidatesWithVotes].sort((a: any, b: any) => b.votes - a.votes);
                 const firstPlace = sortedCandidates[0]?.votes || 0;
                 const secondPlace = sortedCandidates[1]?.votes || 0;
                 
@@ -365,10 +366,23 @@ export default function AdminDashboard() {
                   competition,
                   totalVotes: votesForPosition,
                   candidates: pos.candidates?.length || 0,
-                  leader: sortedCandidates[0]?.name || 'N/A'
+                  candidatesWithVotes: candidatesWithVotes.length,
+                  leader: sortedCandidates[0]?.name || 'N/A',
+                  margin: firstPlace - secondPlace
                 };
               })
-              .sort((a: any, b: any) => b.competition - a.competition)
+              .filter((pos: any) => 
+                pos.candidatesWithVotes >= 2 && // At least 2 candidates have votes
+                pos.totalVotes >= 2 // At least 2 votes cast in this position
+              )
+              .sort((a: any, b: any) => {
+                // Sort by competition index (higher = closer race)
+                // If tied, sort by total votes (more votes = more significant)
+                if (b.competition === a.competition) {
+                  return b.totalVotes - a.totalVotes;
+                }
+                return b.competition - a.competition;
+              })
               .slice(0, 5);
           }
         } catch (error) {
@@ -894,7 +908,11 @@ export default function AdminDashboard() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1">
                           <h4 className="font-semibold text-slate-800">{position.name}</h4>
-                          <p className="text-xs text-slate-500 mt-1">Competition Index: <span className="font-bold text-orange-600">{position.competition}%</span></p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Competition: <span className="font-bold text-orange-600">{position.competition}%</span>
+                            <span className="mx-1.5">•</span>
+                            Margin: <span className="font-bold">{position.margin} vote{position.margin !== 1 ? 's' : ''}</span>
+                          </p>
                         </div>
                         <Badge 
                           className={`${
@@ -907,7 +925,7 @@ export default function AdminDashboard() {
                         </Badge>
                       </div>
                       <div className="flex items-center justify-between text-sm text-slate-600">
-                        <span>{position.totalVotes} votes • {position.candidates} candidates</span>
+                        <span>{position.totalVotes} votes • {position.candidatesWithVotes} active candidates</span>
                         <span className="font-medium">Leading: {position.leader}</span>
                       </div>
                     </div>
@@ -918,6 +936,139 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
+
+      {/* All Candidates Vote Count - Full Width */}
+      {stats.activeElection && stats.candidateVotesByPosition.length > 0 && (
+        <Card className="bg-white/80 backdrop-blur border-0 shadow-lg overflow-hidden">
+          <CardHeader className="border-b border-slate-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-slate-800 flex items-center gap-2">
+                  <div className="p-2 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg">
+                    <Award className="w-4 h-4 text-white" />
+                  </div>
+                  All Candidates Vote Count
+                </CardTitle>
+                <CardDescription className="text-slate-500 mt-1">Complete voting results for all positions and candidates</CardDescription>
+              </div>
+              <Badge className="bg-slate-100 text-slate-700 text-sm px-3 py-1">
+                {stats.candidateVotesByPosition.reduce((total: number, pos: any) => total + (pos.candidates?.length || 0), 0)} Total Candidates
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="space-y-8">
+              {stats.candidateVotesByPosition.map((position: any, posIndex: number) => {
+                const totalVotesForPosition = position.candidates?.reduce((sum: number, c: any) => sum + c.votes, 0) || 0;
+                const positionColor = POSITION_COLORS[position.positionName] || CHART_COLORS[posIndex % CHART_COLORS.length];
+
+                return (
+                  <div key={position.positionId} className="space-y-3">
+                    {/* Position Header */}
+                    <div className="flex items-center justify-between pb-2 border-b-2 border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-1 h-8 rounded-full"
+                          style={{ backgroundColor: positionColor }}
+                        />
+                        <div>
+                          <h3 className="font-bold text-slate-800 text-lg">{position.positionName}</h3>
+                          <p className="text-xs text-slate-500">
+                            {position.candidates?.length || 0} candidates • {totalVotesForPosition} total votes
+                          </p>
+                        </div>
+                      </div>
+                      <Badge 
+                        className="text-xs px-2 py-1"
+                        style={{ backgroundColor: `${positionColor}15`, color: positionColor }}
+                      >
+                        Position #{posIndex + 1}
+                      </Badge>
+                    </div>
+
+                    {/* Candidates List */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {position.candidates.map((candidate: any, candIndex: number) => {
+                        const percentage = totalVotesForPosition > 0 ? (candidate.votes / totalVotesForPosition) * 100 : 0;
+                        const isLeader = candIndex === 0 && candidate.votes > 0;
+
+                        return (
+                          <div 
+                            key={candidate.id} 
+                            className={`relative p-4 rounded-lg border-2 transition-all duration-200 ${
+                              isLeader 
+                                ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-300 shadow-md' 
+                                : candidate.votes > 0
+                                  ? 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                                  : 'bg-white border-slate-100 opacity-60'
+                            }`}
+                          >
+                            {/* Leader Badge */}
+                            {isLeader && (
+                              <div className="absolute -top-2 -right-2">
+                                <div className="bg-gradient-to-br from-yellow-400 to-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1">
+                                  <Award className="w-3 h-3" />
+                                  LEADING
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Candidate Info */}
+                            <div className="space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <h4 className="font-semibold text-slate-800 text-sm leading-tight flex-1">
+                                  {candidate.name || 'Unknown'}
+                                </h4>
+                                <span className="text-lg font-bold text-slate-800 shrink-0">
+                                  {candidate.votes}
+                                </span>
+                              </div>
+
+                              {/* Partylist */}
+                              {candidate.partylist && (
+                                <div className="flex items-center gap-1.5">
+                                  <div
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: candidate.partylist.color }}
+                                  />
+                                  <span className="text-xs text-slate-600 font-medium">
+                                    {candidate.partylist.name}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Vote Bar */}
+                              <div className="space-y-1">
+                                <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className="h-2 rounded-full transition-all duration-300"
+                                    style={{ 
+                                      width: `${Math.max(percentage, candidate.votes > 0 ? 5 : 0)}%`,
+                                      backgroundColor: isLeader ? '#f59e0b' : positionColor
+                                    }}
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-slate-500">
+                                    {percentage.toFixed(1)}% of position
+                                  </span>
+                                  <span className={`font-semibold ${candidate.votes > 0 ? 'text-slate-700' : 'text-slate-400'}`}>
+                                    Rank #{candIndex + 1}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

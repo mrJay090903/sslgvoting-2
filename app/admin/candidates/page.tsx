@@ -22,7 +22,7 @@ interface Candidate {
   photo_url: string | null;
   is_active: boolean;
   student: { "Full Name": string; "Student ID": string } | null;
-  position: { name: string } | null;
+  position: { name: string; display_order: number } | null;
   partylist: { name: string; color: string } | null;
 }
 
@@ -92,7 +92,15 @@ export default function CandidatesPage() {
       const partylistsRes = await fetch('/api/partylists');
       const partylistsData = await partylistsRes.json();
 
-      setCandidates(Array.isArray(candidatesData) ? candidatesData : []);
+      // Sort candidates by position display_order
+      const sortedCandidates = Array.isArray(candidatesData) 
+        ? candidatesData.sort((a: Candidate, b: Candidate) => {
+            const orderA = a.position?.display_order ?? 999;
+            const orderB = b.position?.display_order ?? 999;
+            return orderA - orderB;
+          })
+        : [];
+      setCandidates(sortedCandidates);
       setStudents(Array.isArray(studentsData) ? studentsData : []);
       
       // Filter active positions and deduplicate by id and name

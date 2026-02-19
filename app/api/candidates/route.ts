@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       .select(`
         *,
         student:students(*),
-        position:positions(name),
+        position:positions(name, display_order),
         partylist:partylists(name, color)
       `);
 
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       .select(`
         *,
         student:students(*),
-        position:positions(name),
+        position:positions(name, display_order),
         partylist:partylists(name, color)
       `);
 
@@ -123,7 +123,7 @@ export async function PATCH(request: Request) {
       .select(`
         *,
         student:students(*),
-        position:positions(name),
+        position:positions(name, display_order),
         partylist:partylists(name, color)
       `)
       .single();
