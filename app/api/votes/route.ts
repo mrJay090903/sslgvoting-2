@@ -190,9 +190,10 @@ export async function POST(request: Request) {
     for (const pos of positionsData) {
       const votesForPosition = votesByPosition[pos.id]?.length || 0;
       const maxVotes = pos.max_votes || 1;
+      console.log(`Position ${pos.id}: ${votesForPosition} votes, max allowed: ${maxVotes}`);
       if (votesForPosition > maxVotes) {
         return NextResponse.json(
-          { error: `Too many votes for a position. Maximum allowed: ${maxVotes}` }, 
+          { error: `Too many votes for a position (got ${votesForPosition}, max ${maxVotes}). Please update position max_votes in the database.` }, 
           { status: 400 }
         );
       }
