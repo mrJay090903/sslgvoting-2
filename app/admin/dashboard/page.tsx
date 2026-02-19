@@ -343,21 +343,33 @@ export default function AdminDashboard() {
               };
             }).sort((a: any, b: any) => b.votes - a.votes);
 
-            // Get most competitive positions (highest vote competition)
-            mostCompetitivePositions = candidateVotesByPosition.map((pos: any) => {
-              const votesForPosition = pos.candidates?.reduce((sum: number, c: any) => sum + c.votes, 0) || 0;
-              const maxVotes = Math.max(...(pos.candidates?.map((c: any) => c.votes) || [0]));
-              const minVotes = Math.min(...(pos.candidates?.map((c: any) => c.votes) || [0]));
-              const competition = maxVotes > 0 ? Math.round(((maxVotes - minVotes) / maxVotes) * 100) : 0;
-              
-              return {
-                name: pos.positionName,
-                competition,
-                totalVotes: votesForPosition,
-                candidates: pos.candidates?.length || 0,
-                leader: pos.candidates?.length > 0 ? pos.candidates[0].name : 'N/A'
-              };
-            }).sort((a: any, b: any) => b.competition - a.competition).slice(0, 5);
+            // Get most competitive positions (closest races between top candidates)
+            mostCompetitivePositions = candidateVotesByPosition
+              .filter((pos: any) => (pos.candidates?.length || 0) >= 2) // Only positions with 2+ candidates
+              .map((pos: any) => {
+                const votesForPosition = pos.candidates?.reduce((sum: number, c: any) => sum + c.votes, 0) || 0;
+                
+                // Sort candidates by votes descending
+                const sortedCandidates = [...(pos.candidates || [])].sort((a: any, b: any) => b.votes - a.votes);
+                const firstPlace = sortedCandidates[0]?.votes || 0;
+                const secondPlace = sortedCandidates[1]?.votes || 0;
+                
+                // Competition index: how close is 2nd place to 1st place
+                // 100% means tied, 0% means 2nd place has no votes
+                const competition = firstPlace > 0 
+                  ? Math.round((secondPlace / firstPlace) * 100) 
+                  : 0;
+                
+                return {
+                  name: pos.positionName,
+                  competition,
+                  totalVotes: votesForPosition,
+                  candidates: pos.candidates?.length || 0,
+                  leader: sortedCandidates[0]?.name || 'N/A'
+                };
+              })
+              .sort((a: any, b: any) => b.competition - a.competition)
+              .slice(0, 5);
           }
         } catch (error) {
           console.error('Error fetching candidate votes:', error);
