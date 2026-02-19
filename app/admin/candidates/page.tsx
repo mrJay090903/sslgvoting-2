@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -9,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, UserCircle, Upload, X, Pencil } from "lucide-react";
+import { Plus, Trash2, UserCircle, Upload, X, Pencil, Search } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
 
@@ -55,6 +56,8 @@ export default function CandidatesPage() {
   const [editingCandidate, setEditingCandidate] = useState<Candidate | null>(null);
   const [uploading, setUploading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [studentSearch, setStudentSearch] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     student_id: "",
@@ -129,6 +132,28 @@ export default function CandidatesPage() {
     }
     setLoading(false);
   };
+
+  // Filter students based on search
+  const filteredStudents = useMemo(() => {
+    const searchTerm = studentSearch.toLowerCase().trim();
+    if (!searchTerm) return students;
+    return students.filter(student => 
+      student["Full Name"].toLowerCase().includes(searchTerm) ||
+      student["Student ID"].toLowerCase().includes(searchTerm) ||
+      student.Grade.toString().includes(searchTerm)
+    );
+  }, [students, studentSearch]);
+
+  // Get candidate student IDs for marking in the dropdown
+  const candidateStudentIds = useMemo(() => {
+    return new Set(
+      candidates
+        .filter(c => !editingCandidate || c.id !== editingCandidate.id)
+        .map(c => c.student)
+        .filter(Boolean)
+        .map(s => s!["Student ID"])
+    );
+  }, [candidates, editingCandidate]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -211,8 +236,10 @@ export default function CandidatesPage() {
     const stu = students.find(s => s["Full Name"] === candidate.student?.["Full Name"]);
     if (stu) {
       setFormData(prev => ({ ...prev, student_id: stu.id }));
+      setSelectedStudent(stu);
     }
     setPhotoPreview(candidate.photo_url || null);
+    setStudentSearch("");
     setDialogOpen(true);
   };
 
@@ -335,6 +362,8 @@ export default function CandidatesPage() {
     });
     setPhotoPreview(null);
     setEditingCandidate(null);
+    setStudentSearch("");
+    setSelectedStudent(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -370,7 +399,11 @@ export default function CandidatesPage() {
           <h1 className="text-3xl font-bold text-slate-800">Candidates</h1>
         </div>
         <Button 
-          onClick={() => setDialogOpen(true)}
+          onClick={() => {
+            setStudentSearch("");
+            setSelectedStudent(null);
+            setDialogOpen(true);
+          }}
           className="bg-gradient-to-r from-sky-500 to-blue-600 text-white hover:from-sky-600 hover:to-blue-700 shadow-lg shadow-sky-500/25"
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -484,21 +517,89 @@ export default function CandidatesPage() {
             ) : (
               <div className="space-y-2">
                 <Label htmlFor="student_id" className="text-slate-700">Student *</Label>
-                <Select
-                  value={formData.student_id}
-                  onValueChange={(value) => setFormData({ ...formData, student_id: value })}
-                >
-                  <SelectTrigger className="border-slate-200">
-                    <SelectValue placeholder="Select a student" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {students.map((student) => (
-                      <SelectItem key={student.id} value={student.id}>
-                        {student["Full Name"]} ({student["Student ID"]})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                
+                {selectedStudent ? (
+                  <div className="flex items-center justify-between p-3 border border-slate-200 rounded-md bg-slate-50">
+                    <div>
+                      <p className="font-medium text-slate-800">{selectedStudent["Full Name"]}</p>
+                      <p className="text-sm text-slate-600">ID: {selectedStudent["Student ID"]} • Grade {selectedStudent.Grade}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedStudent(null);
+                        setFormData({ ...formData, student_id: "" });
+                        setStudentSearch("");
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input
+                        placeholder="Search by name, ID, or grade..."
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        className="pl-9 border-slate-200"
+                      />
+                    </div>
+                    
+                    {studentSearch && (
+                      <div className="border border-slate-200 rounded-md max-h-60 overflow-y-auto">
+                        {filteredStudents.length === 0 ? (
+                          <div className="px-4 py-8 text-center text-sm text-slate-500">
+                            No students found
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100">
+                            {filteredStudents.map((student) => {
+                              const isCandidate = candidateStudentIds.has(student["Student ID"]);
+                              return (
+                                <button
+                                  key={student.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isCandidate) {
+                                      setSelectedStudent(student);
+                                      setFormData({ ...formData, student_id: student.id });
+                                      setStudentSearch("");
+                                    }
+                                  }}
+                                  disabled={isCandidate}
+                                  className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${
+                                    isCandidate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="font-medium text-slate-800">{student["Full Name"]}</p>
+                                      <p className="text-sm text-slate-600">ID: {student["Student ID"]} • Grade {student.Grade}</p>
+                                    </div>
+                                    {isCandidate && (
+                                      <Badge variant="outline" className="ml-2 text-xs">Already a candidate</Badge>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {filteredStudents.length > 0 && (
+                          <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+                            <p className="text-xs text-slate-500">
+                              Showing {filteredStudents.length} student{filteredStudents.length !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
