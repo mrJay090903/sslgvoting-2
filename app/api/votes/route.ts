@@ -220,9 +220,16 @@ export async function POST(request: Request) {
       .insert(validatedVotes);
 
     if (votesError) {
-      console.error('Vote insertion error:', votesError);
+      console.error('Vote insertion error:', {
+        message: votesError.message,
+        code: votesError.code,
+        details: votesError.details,
+        hint: votesError.hint,
+        votesCount: validatedVotes.length,
+        positions: Object.entries(votesByPosition).map(([pid, cids]) => ({ positionId: pid, count: cids.length }))
+      });
       return NextResponse.json(
-        { error: 'Failed to submit votes. Please try again.' }, 
+        { error: 'Failed to submit votes: ' + votesError.message }, 
         { status: 500 }
       );
     }
